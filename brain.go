@@ -13,7 +13,17 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/joho/godotenv"
 )
+
+type application struct {
+	auth struct {
+		username string
+		password string
+	}
+}
 
 type Task struct {
 	Id        int
@@ -35,10 +45,40 @@ func main() {
 		log.Fatal(err)
 	}
 
-	http.HandleFunc("/", welcome)
-	http.HandleFunc("/tasks", tasks)
-	http.HandleFunc("/tasks/", task)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	err = godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	app := new(application)
+
+	app.auth.username = os.Getenv("AUTH_USERNAME")
+	app.auth.password = os.Getenv("AUTH_PASSWORD")
+
+	if app.auth.username == "" {
+		log.Fatal("basic auth username must be provided")
+	}
+
+	if app.auth.password == "" {
+		log.Fatal("basic auth password must be provided")
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", app.basicAuth(welcome))
+	mux.HandleFunc("/tasks", app.basicAuth(tasks))
+	mux.HandleFunc("/tasks/", app.basicAuth(task))
+
+	srv := &http.Server{
+		Addr:         ":8080",
+		Handler:      mux,
+		IdleTimeout:  time.Minute,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 30 * time.Second,
+	}
+
+	log.Printf("starting server on %s", srv.Addr)
+	err = srv.ListenAndServeTLS("./localhost.pem", "./localhost-key.pem")
+	log.Fatal(err)
 }
 
 func welcome(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +113,8 @@ func create(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
+	// TODO: secy: validate/sanitize input?
 
 	nextId, err := getNextId()
 	if err != nil {
@@ -197,6 +239,8 @@ func update(w http.ResponseWriter, r *http.Request, taskId int) {
 		}
 		return
 	}
+
+	// TODO: secy: validate/sanitize input?
 
 	filename := taskPath(taskId)
 	currentTaskJson, err := os.ReadFile(filename)

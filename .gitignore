@@ -1,1 +1,4 @@
 tasks/
+.env
+localhost.pem
+localhost-key.pem
